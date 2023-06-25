@@ -7,7 +7,9 @@
 
 #include "morse.h"
 
-#define PIN 25
+#define LED_PIN 25
+#define PIN 0
+#define GPIO_MASK ((1u << LED_PIN) | (1u << PIN))
 
 volatile char buf[256] = {0};
 volatile uint8_t buf_head = 0;
@@ -30,7 +32,7 @@ int64_t timer_callback(alarm_id_t id, void *user_data) {
     if (cbuf_head == cbuf_tail) {
         if (buf_head == buf_tail) {
             // turn off for safe
-            gpio_put(PIN, 0);
+            gpio_clr_mask(GPIO_MASK);
             running = false;
             return 0;
         } else {
@@ -44,7 +46,6 @@ int64_t timer_callback(alarm_id_t id, void *user_data) {
             }
             char c = buf[buf_tail];
             buf_tail = (buf_tail + 1) % 256;
-            printf("pop char: %02x\n", c);
             if (c == ' ') {
                 cbuf[cbuf_head] = 0x04;
                 cbuf_head = (cbuf_head + 1) % 16;
@@ -74,7 +75,12 @@ int64_t timer_callback(alarm_id_t id, void *user_data) {
         }
     }
 
-    gpio_put(PIN, cbuf[cbuf_tail] & 0x80);
+    if (cbuf[cbuf_tail] & 0x80) {
+        gpio_set_mask(GPIO_MASK);
+    } else {
+        gpio_clr_mask(GPIO_MASK);
+    }
+
     uint8_t delay = cbuf[cbuf_tail] & 0x0f;
     cbuf_tail = (cbuf_tail + 1) % 16;
 
@@ -92,8 +98,8 @@ int main() {
     stdio_init_all();
     printf("Hello, world!\n");
 
-    gpio_init(PIN);
-    gpio_set_dir(PIN, GPIO_OUT);
+    gpio_init_mask(GPIO_MASK);
+    gpio_set_dir_out_masked(GPIO_MASK);
 
     alarm_id_t id = 0;
 
@@ -105,7 +111,6 @@ int main() {
         uint32_t c = getchar_timeout_us(0);
         if (c != PICO_ERROR_TIMEOUT) {
             printf("char: 0x%02x\n", c);
-            printf("mode: %d\n", command_mode);
 
             if (command_mode) {
                 switch (command_mode) {
@@ -133,14 +138,14 @@ int main() {
                                 buf_tail = buf_head;
                                 cbuf_tail = cbuf_head;
                                 cancel_alarm(id);
-                                gpio_put(PIN, 1);
+                                gpio_set_mask(GPIO_MASK);
                                 break;
 
                             case '0': // raw off
                                 buf_tail = buf_head;
                                 cbuf_tail = cbuf_head;
                                 cancel_alarm(id);
-                                gpio_put(PIN, 0);
+                                gpio_clr_mask(GPIO_MASK);
                                 break;
                         }
                         break;
@@ -176,7 +181,7 @@ int main() {
                         buf_head = buf_tail;
                         cbuf_head = cbuf_tail;
                         cancel_alarm(id);
-                        gpio_put(PIN, 0);
+                        gpio_clr_mask(GPIO_MASK);
                         break;
 
                     case 0x7f: // backspace
@@ -186,7 +191,7 @@ int main() {
                         } else if (cbuf_head != cbuf_tail) {
                             cbuf_tail = cbuf_head;
                             cancel_alarm(id);
-                            gpio_put(PIN, 0);
+                            gpio_clr_mask(GPIO_MASK);
                         }
 
                         break;
