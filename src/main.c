@@ -11,11 +11,13 @@
 #define PIN 0
 #define GPIO_MASK ((1u << LED_PIN) | (1u << PIN))
 
-volatile char buf[256] = {0};
+#define BUF_SIZE 256
+volatile char buf[BUF_SIZE] = {0};
 volatile uint8_t buf_head = 0;
 volatile uint8_t buf_tail = 0;
 
-volatile char cbuf[16];
+#define CBUF_SIZE 16
+volatile char cbuf[CBUF_SIZE];
 volatile uint8_t cbuf_head = 0;
 volatile uint8_t cbuf_tail = 0;
 
@@ -40,37 +42,37 @@ int64_t timer_callback(alarm_id_t id, void *user_data) {
                 uint8_t b = buf_tail;
                 while (b != buf_head) {
                     printf("%02x ", buf[b]);
-                    b = (b + 1) % 256;
+                    b = (b + 1) % BUF_SIZE;
                 }
                 printf("\n");
             }
             char c = buf[buf_tail];
-            buf_tail = (buf_tail + 1) % 256;
+            buf_tail = (buf_tail + 1) % BUF_SIZE;
             if (c == ' ') {
                 cbuf[cbuf_head] = 0x04;
-                cbuf_head = (cbuf_head + 1) % 16;
+                cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
             } else if (c & 0x80) { // special chars
                 cbuf[cbuf_head] =
                     (c == RAW_DASH_CHAR)  ? 0xf3 :
                     (c == RAW_DOT_CHAR)   ? 0xf1 :
                     (c == RAW_SPACE_CHAR) ? 0x02 : 0x00;
-                cbuf_head = (cbuf_head + 1) % 16;
+                cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
 
                 cbuf[cbuf_head] = 0x01;
-                cbuf_head = (cbuf_head + 1) % 16;
+                cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
             } else {
                 morse m = MORSE_TABLE[c];
                 uint8_t i = 1u << (m.len - 1);
                 while (i) {
                     cbuf[cbuf_head] = (m.code & i) ? 0xf3 : 0xf1;
-                    cbuf_head = (cbuf_head + 1) % 16;
+                    cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
 
                     cbuf[cbuf_head] = 0x01;
-                    cbuf_head = (cbuf_head + 1) % 16;
+                    cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
 
                     i >>= 1;
                 }
-                cbuf[(cbuf_head + 15) % 16] = 0x03;
+                cbuf[(cbuf_head + CBUF_SIZE - 1) % CBUF_SIZE] = 0x03;
             }
         }
     }
@@ -82,7 +84,7 @@ int64_t timer_callback(alarm_id_t id, void *user_data) {
     }
 
     uint8_t delay = cbuf[cbuf_tail] & 0x0f;
-    cbuf_tail = (cbuf_tail + 1) % 16;
+    cbuf_tail = (cbuf_tail + 1) % CBUF_SIZE;
 
     return -(int64_t)(speed_delay * delay);
 }
@@ -121,17 +123,17 @@ int main() {
 
                             case '-': // raw dash
                                 buf[buf_head] = '-' ^ (char)0x80;
-                                buf_head = (buf_head + 1) % 256;
+                                buf_head = (buf_head + 1) % BUF_SIZE;
                                 break;
 
                             case '.': // raw dot
                                 buf[buf_head] = '.' ^ (char)0x80;
-                                buf_head = (buf_head + 1) % 256;
+                                buf_head = (buf_head + 1) % BUF_SIZE;
                                 break;
 
                             case ' ': // raw space
                                 buf[buf_head] = ' ' ^ (char)0x80;
-                                buf_head = (buf_head + 1) % 256;
+                                buf_head = (buf_head + 1) % BUF_SIZE;
                                 break;
 
                             case '1': // raw on
@@ -186,7 +188,7 @@ int main() {
 
                     case 0x7f: // backspace
                         if (buf_head != buf_tail) {
-                            buf_head = (buf_head + 255) % 256;
+                            buf_head = (buf_head + BUF_SIZE - 1) % BUF_SIZE;
                             buf[buf_head] = 0;
                         } else if (cbuf_head != cbuf_tail) {
                             cbuf_tail = cbuf_head;
@@ -198,7 +200,7 @@ int main() {
 
                     default:
                         buf[buf_head] = toupper(c);
-                        buf_head = (buf_head + 1) % 256;
+                        buf_head = (buf_head + 1) % BUF_SIZE;
                         break;
                 }
             }
