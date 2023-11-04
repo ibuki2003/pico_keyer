@@ -30,28 +30,28 @@ uint32_t speed_delay = 60000; // us
 #define RAW_DOT_CHAR   ('.' ^ (char)0x80)
 #define RAW_SPACE_CHAR (' ' ^ (char)0x80)
 
+// to add newline before printing
+volatile bool nl = false;
+
 int64_t timer_callback(alarm_id_t id, void *user_data) {
     if (cbuf_head == cbuf_tail) {
         if (buf_head == buf_tail) {
             // turn off for safe
             gpio_clr_mask(GPIO_MASK);
             running = false;
+            putchar('\n');
+            nl = false;
             return 0;
         } else {
-            {
-                uint8_t b = buf_tail;
-                while (b != buf_head) {
-                    printf("%02x ", buf[b]);
-                    b = (b + 1) % BUF_SIZE;
-                }
-                printf("\n");
-            }
+            nl = true;
             char c = buf[buf_tail];
             buf_tail = (buf_tail + 1) % BUF_SIZE;
             if (c == ' ') {
+                puts("<SPC>");
                 cbuf[cbuf_head] = 0x04;
                 cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
             } else if (c & 0x80) { // special chars
+                printf("<%c>", c & 0x7f);
                 cbuf[cbuf_head] =
                     (c == RAW_DASH_CHAR)  ? 0xf3 :
                     (c == RAW_DOT_CHAR)   ? 0xf1 :
@@ -62,17 +62,20 @@ int64_t timer_callback(alarm_id_t id, void *user_data) {
                 cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
             } else {
                 morse m = MORSE_TABLE[c];
-                uint8_t i = 1u << (m.len - 1);
-                while (i) {
-                    cbuf[cbuf_head] = (m.code & i) ? 0xf3 : 0xf1;
-                    cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
+                if (m.len) {
+                    putchar(c);
+                    uint8_t i = 1u << (m.len - 1);
+                    while (i) {
+                        cbuf[cbuf_head] = (m.code & i) ? 0xf3 : 0xf1;
+                        cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
 
-                    cbuf[cbuf_head] = 0x01;
-                    cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
+                        cbuf[cbuf_head] = 0x01;
+                        cbuf_head = (cbuf_head + 1) % CBUF_SIZE;
 
-                    i >>= 1;
+                        i >>= 1;
+                    }
+                    cbuf[(cbuf_head + CBUF_SIZE - 1) % CBUF_SIZE] = 0x03;
                 }
-                cbuf[(cbuf_head + CBUF_SIZE - 1) % CBUF_SIZE] = 0x03;
             }
         }
     }
@@ -98,7 +101,6 @@ enum CommandMode {
 
 int main() {
     stdio_init_all();
-    printf("Hello, world!\n");
 
     gpio_init_mask(GPIO_MASK);
     gpio_set_dir_out_masked(GPIO_MASK);
@@ -111,8 +113,24 @@ int main() {
 
     while (1) {
         uint32_t c = getchar_timeout_us(0);
-        if (c != PICO_ERROR_TIMEOUT) {
-            printf("char: 0x%02x\n", c);
+        if (c != PICO_ERROR_TIMEOUT &&
+            (
+                c >= 0x20 ||
+                c == '\n' ||
+                c == '\r' ||
+                c == 0x15
+            )) {
+
+            if (nl) {
+                putchar('\n');
+                nl = false;
+            }
+
+            printf("> 0x%02x", c);
+            if (0x20 <= c && c <= 0x7e) {
+                printf("('%c')", c);
+            }
+            putchar('\n');
 
             if (command_mode) {
                 switch (command_mode) {
